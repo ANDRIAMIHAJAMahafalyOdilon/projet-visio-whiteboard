@@ -13,15 +13,30 @@ export function useChat(roomId: string, username: string) {
 
     useEffect(() => {
         const socket = socketService.getSocket();
-        socket.on('chat:message', (message: ChatMessage) => {
-            setMessages((prev) => [...prev, message]);
-        });
-        return () => { socket.off('chat:message'); };
+
+        // Handler nommé obligatoire pour que socket.off retire uniquement CE listener
+        const onChatMessage = (message: ChatMessage) => {
+            setMessages((prev) => {
+                // Éviter les doublons si le message est déjà présent
+                if (prev.some((m) => m.id === message.id)) return prev;
+                return [...prev, message];
+            });
+        };
+
+        socket.on('chat:message', onChatMessage);
+
+        return () => {
+            socket.off('chat:message', onChatMessage);
+        };
     }, []);
 
     const sendMessage = useCallback((text: string) => {
         if (!text.trim()) return;
-        socketService.getSocket().emit('chat:send', { roomId, sender: username, text: text.trim() });
+        socketService.getSocket().emit('chat:send', {
+            roomId,
+            sender: username,
+            text: text.trim(),
+        });
     }, [roomId, username]);
 
     return { messages, sendMessage };

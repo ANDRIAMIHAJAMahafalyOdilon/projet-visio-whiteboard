@@ -43,6 +43,8 @@ export function useDrawing(username: string, isHost: boolean): UseDrawingResult 
     const isEraserRef = useRef(false);
     const activeStrokeId = useRef<string | null>(null);
     const pointsBuffer = useRef<Point[]>([]);
+    // Ref miroir de canDraw pour que startStroke lise toujours la valeur actuelle
+    const canDrawRef = useRef(isHost);
 
     const setCurrentColor = useCallback((color: string) => {
         colorRef.current = color;
@@ -85,6 +87,7 @@ export function useDrawing(username: string, isHost: boolean): UseDrawingResult 
 
         // Reçu par le participant : l'hôte a accepté
         const onDrawGranted = () => {
+            canDrawRef.current = true;
             setCanDraw(true);
             setHasPendingRequest(false);
         };
@@ -113,7 +116,8 @@ export function useDrawing(username: string, isHost: boolean): UseDrawingResult 
 
     const startStroke = useCallback(
         (point: Point) => {
-            if (!canDraw) return;
+            // Utilise la ref pour lire la valeur à jour (évite la closure stale)
+            if (!canDrawRef.current) return;
             const id = generateId();
             activeStrokeId.current = id;
             pointsBuffer.current = [point];
@@ -130,7 +134,7 @@ export function useDrawing(username: string, isHost: boolean): UseDrawingResult 
             setStrokes((prev) => [...prev, stroke]);
             socketService.getSocket().emit('whiteboard:stroke-start', stroke);
         },
-        [username, canDraw]
+        [username]
     );
 
     const addPoint = useCallback((point: Point) => {

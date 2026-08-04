@@ -69,9 +69,18 @@ export default function LobbyScreen() {
                         <Text style={styles.hostIdLabel}>ID de ta réunion (partage-le)</Text>
                         <View style={styles.hostIdRow}>
                             <Text style={styles.hostIdValue}>{roomId}</Text>
-                            <TouchableOpacity onPress={() => setRoomId(generateRoomId())}>
-                                <Ionicons name="refresh" size={20} color={colors.primary} />
-                            </TouchableOpacity>
+                            <View style={styles.hostIdActions}>
+                                <TouchableOpacity
+                                    style={styles.copyButton}
+                                    onPress={() => Clipboard.setString(roomId)}
+                                >
+                                    <Ionicons name="copy-outline" size={18} color="#fff" />
+                                    <Text style={styles.copyText}>Copier</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => setRoomId(generateRoomId())} style={{ marginLeft: 10 }}>
+                                    <Ionicons name="refresh" size={20} color={colors.primary} />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
                 ) : (
@@ -125,6 +134,9 @@ const styles = StyleSheet.create({
     hostIdLabel: { color: colors.textMuted, fontSize: 12, marginBottom: 6 },
     hostIdRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     hostIdValue: { color: colors.text, fontSize: 22, fontWeight: '700', letterSpacing: 2 },
+    hostIdActions: { flexDirection: 'row', alignItems: 'center' },
+    copyButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm },
+    copyText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 },
     inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, gap: spacing.sm },
     pasteButton: { backgroundColor: colors.primary, borderRadius: radius.md, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
     joinButton: { backgroundColor: colors.primary, paddingVertical: 16, borderRadius: radius.md, alignItems: 'center' },
