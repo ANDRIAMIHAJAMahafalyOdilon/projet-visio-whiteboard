@@ -20,11 +20,6 @@ interface ServerToClientEvents {
     'whiteboard:stroke-update': (payload: { id: string; points: Stroke['points'] }) => void;
     'whiteboard:stroke-end': (payload: { id: string }) => void;
     'whiteboard:clear': () => void;
-    // Permission de dessin — reçu par l'hôte quand un participant demande
-    'whiteboard:draw-request': (payload: { socketId: string; username: string }) => void;
-    // Reçu par le participant selon la décision de l'hôte
-    'whiteboard:draw-granted': () => void;
-    'whiteboard:draw-denied': () => void;
     'chat:message': (payload: { id: string; sender: string; text: string; timestamp: string }) => void;
     'hand:update': (payload: { socketId: string; username: string; raised: boolean }) => void;
 }
@@ -38,11 +33,6 @@ interface ClientToServerEvents {
     'whiteboard:stroke-update': (payload: { id: string; points: Stroke['points'] }) => void;
     'whiteboard:stroke-end': (payload: { id: string }) => void;
     'whiteboard:clear': () => void;
-    // Participant → serveur → hôte
-    'whiteboard:request-draw': (payload: { roomId: string }) => void;
-    // Hôte → serveur → participant
-    'whiteboard:allow-draw': (payload: { targetSocketId: string }) => void;
-    'whiteboard:deny-draw': (payload: { targetSocketId: string }) => void;
     'chat:send': (payload: { roomId: string; sender: string; text: string }) => void;
     'hand:toggle': (payload: { roomId: string; raised: boolean }) => void;
 }

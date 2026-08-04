@@ -10,13 +10,10 @@ interface ToolBarProps {
     currentWidth: number;
     isEraser: boolean;
     isHost: boolean;
-    canDraw: boolean;
-    hasPendingRequest: boolean;
     onSelectColor: (color: string) => void;
     onSelectWidth: (width: number) => void;
     onToggleEraser: () => void;
     onClearAll: () => void;
-    onRequestDraw: () => void;
 }
 
 export default function ToolBar({
@@ -24,33 +21,12 @@ export default function ToolBar({
     currentWidth,
     isEraser,
     isHost,
-    canDraw,
-    hasPendingRequest,
     onSelectColor,
     onSelectWidth,
     onToggleEraser,
     onClearAll,
-    onRequestDraw,
 }: ToolBarProps) {
     const insets = useSafeAreaInsets();
-
-    // Participant sans permission : afficher uniquement le bouton de demande
-    if (!canDraw && !isHost) {
-        return (
-            <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : spacing.sm }]}>
-                <TouchableOpacity
-                    style={[styles.requestButton, hasPendingRequest && styles.requestButtonPending]}
-                    onPress={onRequestDraw}
-                    disabled={hasPendingRequest}
-                >
-                    <Ionicons name="hand-left-outline" size={18} color="#fff" />
-                    <Text style={styles.requestText}>
-                        {hasPendingRequest ? 'Demande envoyée…' : 'Demander à dessiner'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
 
     return (
         <View style={[styles.container, { paddingBottom: insets.bottom > 0 ? insets.bottom : spacing.sm }]}>
@@ -172,23 +148,5 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         marginLeft: 4,
-    },
-    requestButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: colors.primary,
-        paddingVertical: 10,
-        borderRadius: radius.md,
-        gap: spacing.xs,
-    },
-    requestButtonPending: {
-        backgroundColor: colors.surfaceLight,
-    },
-    requestText: {
-        color: '#fff',
-        fontWeight: '600',
-        fontSize: 14,
     },
 });

@@ -32,11 +32,9 @@ export default function MeetingRoomScreen() {
     const {
         strokes,
         currentColor, currentWidth, isEraser,
-        canDraw, hasPendingRequest, pendingDrawRequest,
         setCurrentColor, setCurrentWidth, setIsEraser,
         startStroke, addPoint, endStroke, clearBoard,
-        requestDrawPermission, allowDraw, denyDraw,
-    } = useDrawing(username, isHost);
+    } = useDrawing(username);
 
     const { messages, sendMessage } = useChat(roomId, username);
     const { raisedHands, isHandRaised, toggleHand } = useRaisedHand(roomId);
@@ -60,27 +58,6 @@ export default function MeetingRoomScreen() {
             ]);
         }
     }, [joinError]);
-
-    // L'hôte reçoit une demande de dessin → alerte avec Autoriser / Refuser
-    useEffect(() => {
-        if (!isHost || !pendingDrawRequest) return;
-        Alert.alert(
-            'Demande de dessin',
-            `${pendingDrawRequest.username} souhaite dessiner sur le tableau.`,
-            [
-                {
-                    text: 'Refuser',
-                    style: 'destructive',
-                    onPress: () => denyDraw(pendingDrawRequest.socketId),
-                },
-                {
-                    text: 'Autoriser',
-                    onPress: () => allowDraw(pendingDrawRequest.socketId),
-                },
-            ],
-            { cancelable: false }
-        );
-    }, [pendingDrawRequest]);
 
     const handleLeave = () => {
         leaveRoom();
@@ -121,7 +98,6 @@ export default function MeetingRoomScreen() {
                     <>
                         <CanvasView
                             strokes={strokes}
-                            canDraw={canDraw}
                             onStart={startStroke}
                             onMove={addPoint}
                             onEnd={endStroke}
@@ -131,13 +107,10 @@ export default function MeetingRoomScreen() {
                             currentWidth={currentWidth}
                             isEraser={isEraser}
                             isHost={isHost}
-                            canDraw={canDraw}
-                            hasPendingRequest={hasPendingRequest}
                             onSelectColor={setCurrentColor}
                             onSelectWidth={setCurrentWidth}
                             onToggleEraser={() => setIsEraser(!isEraser)}
                             onClearAll={handleClearAll}
-                            onRequestDraw={() => requestDrawPermission(roomId)}
                         />
                     </>
                 )}
