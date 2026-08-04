@@ -1,25 +1,44 @@
 {
   "expo": {
-    "name": "projet-visio-whiteboard",
-    "slug": "projet-visio-whiteboard",
+    "name": "VisioWhiteboard",
+    "slug": "visio-whiteboard",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tonnom.visiowhiteboard",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Nécessaire pour la visioconférence",
+        "NSMicrophoneUsageDescription": "Nécessaire pour l'audio de la visioconférence"
+      }
     },
     "android": {
+      "package": "com.tonnom.visiowhiteboard",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "extra": {
+      "eas": {
+        "projectId": "896eeb2d-ea34-4940-9e19-451d13a3c748"
+      }
     }
   }
 }

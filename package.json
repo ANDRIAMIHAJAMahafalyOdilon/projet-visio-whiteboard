@@ -2,21 +2,45 @@
   "name": "projet-visio-whiteboard",
   "version": "1.0.0",
   "main": "index.ts",
-  "dependencies": {
-    "expo": "~57.0.7",
-    "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
-    "react-native": "0.86.0"
-  },
-  "devDependencies": {
-    "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
-  },
+  "private": true,
+  "description": "",
+  "author": "",
+  "license": "ISC",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@react-navigation/native": "^7.3.13",
+    "@react-navigation/native-stack": "^7.18.5",
+    "babel-preset-expo": "~57.0.0",
+    "expo": "~57.0.7",
+    "expo-font": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2",
+    "react-native-svg": "15.15.4",
+    "react-native-webrtc": "^124.0.7",
+    "socket.io-client": "^4.8.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "babel-plugin-module-resolver": "^5.0.3",
+    "typescript": "~6.0.3"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-webrtc"
+        ]
+      }
+    }
+  }
 }

@@ -1,20 +1,24 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import LobbyScreen from '@/screens/LobbyScreen';
+import MeetingRoomScreen from '@/screens/MeetingRoomScreen';
+import { colors } from '@/theme';
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
+    return (
+        <SafeAreaProvider>
+            <StatusBar style="light" />
+            <NavigationContainer>
+                <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+                    <Stack.Screen name="Lobby" component={LobbyScreen} />
+                    <Stack.Screen name="MeetingRoom" component={MeetingRoomScreen} />
+                </Stack.Navigator>
+            </NavigationContainer>
+        </SafeAreaProvider>
+    );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
