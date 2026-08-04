@@ -41,6 +41,8 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 if (prev.some((existing) => existing.socketId === p.socketId)) return prev;
                 return [...prev, p];
             });
+            // Initier l'appel WebRTC vers le nouveau participant
+            webRTCService.callParticipant(p.socketId).catch(() => {});
         };
 
         const onUserLeft = (socketId: string) => {
