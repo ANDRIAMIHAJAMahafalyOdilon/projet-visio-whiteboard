@@ -27,28 +27,33 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
         let isMounted = true;
         let cleanupSocket: (() => void) | undefined;
 
+        // room:participants : reçu par le nouvel arrivant — liste des gens déjà présents
+        // C'est LUI qui doit appeler chacun d'eux (pas l'inverse)
         const onParticipants = (list: RoomParticipant[]) => {
             if (!isMounted) return;
             setParticipants(list);
+            // Le nouvel arrivant initie les appels vers les participants existants
             list.forEach((p) => {
                 webRTCService.callParticipant(p.socketId).catch(() => {});
             });
         };
 
+        // room:user-joined : reçu par les participants existants quand quelqu'un arrive
+        // Ils N'appellent PAS — ils attendent l'offer du nouvel arrivant
         const onUserJoined = (p: RoomParticipant) => {
             if (!isMounted) return;
             setParticipants((prev) => {
                 if (prev.some((existing) => existing.socketId === p.socketId)) return prev;
                 return [...prev, p];
             });
-            // Initier l'appel WebRTC vers le nouveau participant
-            webRTCService.callParticipant(p.socketId).catch(() => {});
+            // PAS de callParticipant ici — le nouvel arrivant appelle, pas les existants
         };
 
         const onUserLeft = (socketId: string) => {
             if (!isMounted) return;
             setParticipants((prev) => prev.filter((p) => p.socketId !== socketId));
             webRTCService.removeParticipant(socketId);
+            setRemoteStreams((prev) => prev.filter((s) => s.socketId !== socketId));
         };
 
         const onRoomError = ({ message }: { message: string }) => {
@@ -91,6 +96,10 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 if (!isMounted) return;
 
                 const socket = socketService.getSocket();
+
+                // Communiquer notre socketId au service WebRTC pour la glare resolution
+                webRTCService.setMySocketId(socket.id ?? '');
+
                 const unsubStream = webRTCService.onRemoteStream((entry: RemoteStreamEntry) => {
                     if (!isMounted) return;
                     setRemoteStreams((prev) => [
@@ -98,6 +107,7 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                         entry,
                     ]);
                 });
+
                 const unsubStreamRemoved = webRTCService.onRemoteStreamRemoved((socketId: string) => {
                     if (!isMounted) return;
                     setRemoteStreams((prev) => prev.filter((s) => s.socketId !== socketId));

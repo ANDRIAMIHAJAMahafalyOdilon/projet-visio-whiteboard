@@ -26,9 +26,14 @@ class WebRTCService {
     private localStream: MediaStream | null = null;
     private onRemoteStreamHandlers: RemoteStreamHandler[] = [];
     private onRemoteStreamRemovedHandlers: RemoteStreamRemovedHandler[] = [];
+    // Garde trace des IDs en cours d'offer pour éviter les doublons
     private makingOffer: Set<string> = new Set();
-    // File d'attente des ICE candidates reçus avant setRemoteDescription
-    private iceCandidateQueue: Map<string, RTCIceCandidateInit[]> = new Map();
+    // Garde trace de notre propre socketId pour la règle de "glare resolution"
+    private mySocketId: string = '';
+
+    setMySocketId(id: string) {
+        this.mySocketId = id;
+    }
 
     async getLocalStream(): Promise<MediaStream> {
         if (this.localStream) return this.localStream;
@@ -60,8 +65,11 @@ class WebRTCService {
     }
 
     private createPeerConnection(remoteSocketId: string): RTCPeerConnection {
-        // Fermer toute connexion existante avant d'en créer une nouvelle
+        // Ne jamais recréer une connexion déjà active
         const existing = this.peerConnections.get(remoteSocketId);
+        if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+            return existing;
+        }
         if (existing) {
             existing.close();
             this.peerConnections.delete(remoteSocketId);
@@ -70,11 +78,9 @@ class WebRTCService {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
         // Ajouter les tracks locaux
-        if (this.localStream) {
-            this.localStream.getTracks().forEach((track) => {
-                pc.addTrack(track, this.localStream!);
-            });
-        }
+        this.localStream?.getTracks().forEach((track) => {
+            pc.addTrack(track, this.localStream!);
+        });
 
         // @ts-ignore
         pc.onicecandidate = (event: any) => {
@@ -90,8 +96,8 @@ class WebRTCService {
         pc.ontrack = (event: any) => {
             const stream = event.streams?.[0];
             if (stream) {
-                this.onRemoteStreamHandlers.forEach((handler) =>
-                    handler({ socketId: remoteSocketId, stream })
+                this.onRemoteStreamHandlers.forEach((h) =>
+                    h({ socketId: remoteSocketId, stream })
                 );
             }
         };
@@ -99,43 +105,33 @@ class WebRTCService {
         // @ts-ignore
         pc.oniceconnectionstatechange = () => {
             const state = pc.iceConnectionState;
-            console.log(`ICE (${remoteSocketId}): ${state}`);
+            console.log(`ICE [${remoteSocketId}]: ${state}`);
             if (state === 'failed') {
                 // @ts-ignore
-                pc.restartIce?.();
+                if (typeof pc.restartIce === 'function') pc.restartIce();
             }
         };
 
         this.peerConnections.set(remoteSocketId, pc);
-        // Initialiser la file d'attente ICE pour ce pair
-        this.iceCandidateQueue.set(remoteSocketId, []);
         return pc;
     }
 
     private getPeerConnection(remoteSocketId: string): RTCPeerConnection | undefined {
         const pc = this.peerConnections.get(remoteSocketId);
-        if (!pc || pc.connectionState === 'closed') {
+        if (!pc) return undefined;
+        if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
             this.peerConnections.delete(remoteSocketId);
             return undefined;
         }
         return pc;
     }
 
-    // Vider la file d'attente ICE une fois remoteDescription défini
-    private async drainIceCandidateQueue(remoteSocketId: string, pc: RTCPeerConnection) {
-        const queue = this.iceCandidateQueue.get(remoteSocketId) ?? [];
-        for (const candidate of queue) {
-            try {
-                await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-                console.warn(`ICE queue drain failed (${remoteSocketId}):`, e);
-            }
-        }
-        this.iceCandidateQueue.set(remoteSocketId, []);
-    }
-
+    // Appelé uniquement par le NOUVEL arrivant vers les participants existants
     async callParticipant(remoteSocketId: string) {
         if (this.makingOffer.has(remoteSocketId)) return;
+        const existing = this.getPeerConnection(remoteSocketId);
+        // Si la connexion est déjà établie, ne pas re-caller
+        if (existing?.signalingState === 'stable' && existing.currentRemoteDescription) return;
 
         this.makingOffer.add(remoteSocketId);
         try {
@@ -144,11 +140,10 @@ class WebRTCService {
             await pc.setLocalDescription(offer);
             socketService.getSocket().emit('webrtc:offer', {
                 to: remoteSocketId,
-                offer: pc.localDescription,
+                offer: { type: offer.type, sdp: offer.sdp },
             });
         } catch (error) {
-            console.warn(`callParticipant failed (${remoteSocketId}):`, error);
-            this.removeParticipant(remoteSocketId);
+            console.warn(`callParticipant failed [${remoteSocketId}]:`, error);
         } finally {
             this.makingOffer.delete(remoteSocketId);
         }
@@ -156,20 +151,33 @@ class WebRTCService {
 
     async handleOffer(fromSocketId: string, offer: StrictSessionDescriptionInit) {
         try {
-            // Toujours créer une nouvelle pc pour répondre à une offre
-            const pc = this.createPeerConnection(fromSocketId);
+            let pc = this.getPeerConnection(fromSocketId);
+
+            // Glare resolution : si les deux côtés ont envoyé un offer simultanément,
+            // le socket avec l'ID lexicographiquement supérieur cède (rollback + accepte l'offer entrant)
+            if (pc?.signalingState === 'have-local-offer') {
+                const weYield = this.mySocketId < fromSocketId;
+                if (!weYield) {
+                    // On ignore l'offer entrant, l'autre va accepter le nôtre
+                    return;
+                }
+                // On annule notre offer et on accepte le leur
+                await pc.setLocalDescription({ type: 'rollback' } as any);
+            }
+
+            if (!pc) {
+                pc = this.createPeerConnection(fromSocketId);
+            }
+
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            // Vider la file d'attente ICE maintenant que remoteDescription est défini
-            await this.drainIceCandidateQueue(fromSocketId, pc);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             socketService.getSocket().emit('webrtc:answer', {
                 to: fromSocketId,
-                answer: pc.localDescription,
+                answer: { type: answer.type, sdp: answer.sdp },
             });
         } catch (error) {
-            console.warn(`handleOffer failed (${fromSocketId}):`, error);
-            this.removeParticipant(fromSocketId);
+            console.warn(`handleOffer failed [${fromSocketId}]:`, error);
         }
     }
 
@@ -179,10 +187,8 @@ class WebRTCService {
             if (!pc) return;
             if (pc.signalingState !== 'have-local-offer') return;
             await pc.setRemoteDescription(new RTCSessionDescription(answer));
-            // Vider la file d'attente ICE maintenant que remoteDescription est défini
-            await this.drainIceCandidateQueue(fromSocketId, pc);
         } catch (error) {
-            console.warn(`handleAnswer failed (${fromSocketId}):`, error);
+            console.warn(`handleAnswer failed [${fromSocketId}]:`, error);
         }
     }
 
@@ -190,18 +196,15 @@ class WebRTCService {
         try {
             const pc = this.getPeerConnection(fromSocketId);
             if (!pc || !candidate) return;
-
-            // Si remoteDescription pas encore défini, mettre en file d'attente
+            // Attendre que la remote description soit définie avant d'ajouter le candidat
             if (!pc.remoteDescription) {
-                const queue = this.iceCandidateQueue.get(fromSocketId) ?? [];
-                queue.push(candidate);
-                this.iceCandidateQueue.set(fromSocketId, queue);
+                // Réessayer dans 500ms
+                setTimeout(() => this.handleIceCandidate(fromSocketId, candidate), 500);
                 return;
             }
-
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (error) {
-            console.warn(`handleIceCandidate failed (${fromSocketId}):`, error);
+            console.warn(`handleIceCandidate failed [${fromSocketId}]:`, error);
         }
     }
 
@@ -210,8 +213,7 @@ class WebRTCService {
         pc?.close();
         this.peerConnections.delete(socketId);
         this.makingOffer.delete(socketId);
-        this.iceCandidateQueue.delete(socketId);
-        this.onRemoteStreamRemovedHandlers.forEach((handler) => handler(socketId));
+        this.onRemoteStreamRemovedHandlers.forEach((h) => h(socketId));
     }
 
     onRemoteStream(handler: RemoteStreamHandler) {
@@ -234,7 +236,7 @@ class WebRTCService {
         this.peerConnections.forEach((pc) => pc.close());
         this.peerConnections.clear();
         this.makingOffer.clear();
-        this.iceCandidateQueue.clear();
+        this.mySocketId = '';
         this.localStream?.getTracks().forEach((track) => track.stop());
         this.localStream = null;
     }
