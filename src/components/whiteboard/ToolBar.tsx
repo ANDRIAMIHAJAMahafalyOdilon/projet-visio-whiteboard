@@ -71,7 +71,7 @@ export default function ToolBar({
                 style={[styles.toolButton, isEraser && styles.toolButtonActive]}
                 onPress={onToggleEraser}
             >
-                <Ionicons name="eraser" size={18} color={isEraser ? '#fff' : colors.text} />
+                <Ionicons name={"eraser" as any} size={18} color={isEraser ? '#fff' : colors.text} />
             </TouchableOpacity>
 
             {isHost && (

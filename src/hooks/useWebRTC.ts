@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MediaStream } from 'react-native-webrtc';
 import { socketService, RoomParticipant } from '@/services/socketService';
 import { webRTCService, RemoteStreamEntry } from '@/services/webRTCService';
@@ -25,35 +25,50 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
 
     useEffect(() => {
         let isMounted = true;
-        let cleanupSocket: (() => void) | undefined;
 
-        // room:participants : reçu par le nouvel arrivant — liste des gens déjà présents
-        // C'est LUI qui doit appeler chacun d'eux (pas l'inverse)
+        // Le participant qui rejoint est "poli" (cède en cas de collision d'offers)
+        // L'hôte est "impoli" (prioritaire)
+        webRTCService.setPolite(!isHost);
+
+        const onRemoteStream = (entry: RemoteStreamEntry) => {
+            if (!isMounted) return;
+            setRemoteStreams((prev) => [
+                ...prev.filter((s) => s.socketId !== entry.socketId),
+                entry,
+            ]);
+        };
+
+        const onRemoteStreamRemoved = (socketId: string) => {
+            if (!isMounted) return;
+            setRemoteStreams((prev) => prev.filter((s) => s.socketId !== socketId));
+        };
+
+        // Reçu par le NOUVEL arrivant : liste des participants déjà présents
+        // → il doit initier un appel vers chacun d'eux
         const onParticipants = (list: RoomParticipant[]) => {
             if (!isMounted) return;
             setParticipants(list);
-            // Le nouvel arrivant initie les appels vers les participants existants
             list.forEach((p) => {
                 webRTCService.callParticipant(p.socketId).catch(() => {});
             });
         };
 
-        // room:user-joined : reçu par les participants existants quand quelqu'un arrive
-        // Ils N'appellent PAS — ils attendent l'offer du nouvel arrivant
+        // Reçu par les ANCIENS participants : quelqu'un vient de rejoindre
+        // → ils créent la connexion et attendent l'offer du nouveau venu
         const onUserJoined = (p: RoomParticipant) => {
             if (!isMounted) return;
             setParticipants((prev) => {
-                if (prev.some((existing) => existing.socketId === p.socketId)) return prev;
+                if (prev.some((e) => e.socketId === p.socketId)) return prev;
                 return [...prev, p];
             });
-            // PAS de callParticipant ici — le nouvel arrivant appelle, pas les existants
+            // Crée la PeerConnection en préparation — onnegotiationneeded enverra l'offer
+            webRTCService.callParticipant(p.socketId).catch(() => {});
         };
 
         const onUserLeft = (socketId: string) => {
             if (!isMounted) return;
             setParticipants((prev) => prev.filter((p) => p.socketId !== socketId));
             webRTCService.removeParticipant(socketId);
-            setRemoteStreams((prev) => prev.filter((s) => s.socketId !== socketId));
         };
 
         const onRoomError = ({ message }: { message: string }) => {
@@ -62,16 +77,16 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
         };
 
         const onOffer = ({ from, offer }: { from: string; offer: RTCSessionDescriptionInit }) => {
-            if (!offer.sdp) return;
+            if (!offer.sdp || !isMounted) return;
             webRTCService
-                .handleOffer(from, { type: offer.type as 'offer', sdp: offer.sdp })
+                .handleOffer(from, { type: 'offer', sdp: offer.sdp })
                 .catch(() => {});
         };
 
         const onAnswer = ({ from, answer }: { from: string; answer: RTCSessionDescriptionInit }) => {
-            if (!answer.sdp) return;
+            if (!answer.sdp || !isMounted) return;
             webRTCService
-                .handleAnswer(from, { type: answer.type as 'answer', sdp: answer.sdp })
+                .handleAnswer(from, { type: 'answer', sdp: answer.sdp })
                 .catch(() => {});
         };
 
@@ -82,37 +97,28 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
             from: string;
             candidate: RTCIceCandidateInit;
         }) => {
+            if (!isMounted) return;
             webRTCService.handleIceCandidate(from, candidate).catch(() => {});
         };
 
         (async () => {
             try {
+                // 1. Obtenir le flux local (caméra + micro)
                 const stream = await webRTCService.getLocalStream();
                 if (!isMounted) return;
                 setLocalStream(stream);
 
+                // 2. Connecter le socket
                 socketService.connect();
                 await socketService.waitForConnect();
                 if (!isMounted) return;
 
+                // 3. S'abonner aux flux distants
+                const unsubStream = webRTCService.onRemoteStream(onRemoteStream);
+                const unsubStreamRemoved = webRTCService.onRemoteStreamRemoved(onRemoteStreamRemoved);
+
+                // 4. S'abonner aux événements socket
                 const socket = socketService.getSocket();
-
-                // Communiquer notre socketId au service WebRTC pour la glare resolution
-                webRTCService.setMySocketId(socket.id ?? '');
-
-                const unsubStream = webRTCService.onRemoteStream((entry: RemoteStreamEntry) => {
-                    if (!isMounted) return;
-                    setRemoteStreams((prev) => [
-                        ...prev.filter((s) => s.socketId !== entry.socketId),
-                        entry,
-                    ]);
-                });
-
-                const unsubStreamRemoved = webRTCService.onRemoteStreamRemoved((socketId: string) => {
-                    if (!isMounted) return;
-                    setRemoteStreams((prev) => prev.filter((s) => s.socketId !== socketId));
-                });
-
                 socket.on('room:participants', onParticipants);
                 socket.on('room:user-joined', onUserJoined);
                 socket.on('room:user-left', onUserLeft);
@@ -121,9 +127,11 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 socket.on('webrtc:answer', onAnswer);
                 socket.on('webrtc:ice-candidate', onIceCandidate);
 
+                // 5. Rejoindre la room
                 socketService.joinRoom(roomId, username, isHost);
 
-                cleanupSocket = () => {
+                // Cleanup au démontage
+                return () => {
                     unsubStream();
                     unsubStreamRemoved();
                     socket.off('room:participants', onParticipants);
@@ -136,17 +144,16 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 };
             } catch (error) {
                 if (!isMounted) return;
-                const message =
+                setJoinError(
                     error instanceof Error
                         ? error.message
-                        : 'Une erreur est survenue en rejoignant la réunion.';
-                setJoinError(message);
+                        : 'Une erreur est survenue en rejoignant la réunion.'
+                );
             }
         })();
 
         return () => {
             isMounted = false;
-            cleanupSocket?.();
         };
     }, [roomId, username, isHost]);
 

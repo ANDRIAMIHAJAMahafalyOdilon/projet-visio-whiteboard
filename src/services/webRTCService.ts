@@ -13,11 +13,6 @@ export interface RemoteStreamEntry {
     stream: MediaStream;
 }
 
-export interface StrictSessionDescriptionInit {
-    type: 'offer' | 'answer' | 'pranswer' | 'rollback';
-    sdp: string;
-}
-
 type RemoteStreamHandler = (entry: RemoteStreamEntry) => void;
 type RemoteStreamRemovedHandler = (socketId: string) => void;
 
@@ -26,13 +21,14 @@ class WebRTCService {
     private localStream: MediaStream | null = null;
     private onRemoteStreamHandlers: RemoteStreamHandler[] = [];
     private onRemoteStreamRemovedHandlers: RemoteStreamRemovedHandler[] = [];
-    // Garde trace des IDs en cours d'offer pour éviter les doublons
-    private makingOffer: Set<string> = new Set();
-    // Garde trace de notre propre socketId pour la règle de "glare resolution"
-    private mySocketId: string = '';
 
-    setMySocketId(id: string) {
-        this.mySocketId = id;
+    // "polite" = celui qui cède en cas de collision d'offers (le nouveau venu est poli)
+    private isPolite = false;
+    private makingOffer: Set<string> = new Set();
+    private ignoreOffer: Set<string> = new Set();
+
+    setPolite(polite: boolean) {
+        this.isPolite = polite;
     }
 
     async getLocalStream(): Promise<MediaStream> {
@@ -49,7 +45,7 @@ class WebRTCService {
             });
             this.localStream = stream as unknown as MediaStream;
             return this.localStream;
-        } catch (error) {
+        } catch {
             throw new Error(
                 "Impossible d'accéder à la caméra ou au micro. Vérifie les autorisations de l'application."
             );
@@ -57,43 +53,50 @@ class WebRTCService {
     }
 
     toggleAudio(enabled: boolean) {
-        this.localStream?.getAudioTracks().forEach((track) => (track.enabled = enabled));
+        this.localStream?.getAudioTracks().forEach((t) => (t.enabled = enabled));
     }
 
     toggleVideo(enabled: boolean) {
-        this.localStream?.getVideoTracks().forEach((track) => (track.enabled = enabled));
+        this.localStream?.getVideoTracks().forEach((t) => (t.enabled = enabled));
+    }
+
+    private getOrCreatePeerConnection(remoteSocketId: string): RTCPeerConnection {
+        const existing = this.peerConnections.get(remoteSocketId);
+        // Réutilise la connexion existante sauf si elle est fermée
+        if (existing && (existing as any).connectionState !== 'closed') {
+            return existing;
+        }
+        return this.createPeerConnection(remoteSocketId);
     }
 
     private createPeerConnection(remoteSocketId: string): RTCPeerConnection {
-        // Ne jamais recréer une connexion déjà active
+        // Ferme proprement la connexion existante si elle existe
         const existing = this.peerConnections.get(remoteSocketId);
-        if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
-            return existing;
-        }
         if (existing) {
-            existing.close();
-            this.peerConnections.delete(remoteSocketId);
+            try { existing.close(); } catch {}
         }
 
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-        // Ajouter les tracks locaux
-        this.localStream?.getTracks().forEach((track) => {
-            pc.addTrack(track, this.localStream!);
-        });
+        // Ajoute les tracks locaux dans la connexion
+        if (this.localStream) {
+            this.localStream.getTracks().forEach((track) => {
+                (pc as any).addTrack(track, this.localStream!);
+            });
+        }
 
-        // @ts-ignore
-        pc.onicecandidate = (event: any) => {
+        // Envoie les candidats ICE au pair distant
+        (pc as any).onicecandidate = (event: any) => {
             if (event.candidate) {
                 socketService.getSocket().emit('webrtc:ice-candidate', {
                     to: remoteSocketId,
-                    candidate: event.candidate,
+                    candidate: event.candidate.toJSON(),
                 });
             }
         };
 
-        // @ts-ignore
-        pc.ontrack = (event: any) => {
+        // Reçoit le flux vidéo distant
+        (pc as any).ontrack = (event: any) => {
             const stream = event.streams?.[0];
             if (stream) {
                 this.onRemoteStreamHandlers.forEach((h) =>
@@ -102,13 +105,28 @@ class WebRTCService {
             }
         };
 
-        // @ts-ignore
-        pc.oniceconnectionstatechange = () => {
-            const state = pc.iceConnectionState;
-            console.log(`ICE [${remoteSocketId}]: ${state}`);
-            if (state === 'failed') {
-                // @ts-ignore
-                if (typeof pc.restartIce === 'function') pc.restartIce();
+        // Gère la renegociation (nécessaire pour perfect negotiation)
+        (pc as any).onnegotiationneeded = async () => {
+            try {
+                this.makingOffer.add(remoteSocketId);
+                const offer = await pc.createOffer({});
+                // Annule si l'état a changé pendant l'attente
+                if ((pc as any).signalingState !== 'stable') return;
+                await pc.setLocalDescription(offer);
+                socketService.getSocket().emit('webrtc:offer', {
+                    to: remoteSocketId,
+                    offer: pc.localDescription as RTCSessionDescriptionInit,
+                });
+            } catch (err) {
+                console.warn('onnegotiationneeded error:', err);
+            } finally {
+                this.makingOffer.delete(remoteSocketId);
+            }
+        };
+
+        (pc as any).oniceconnectionstatechange = () => {
+            if ((pc as any).iceConnectionState === 'failed') {
+                (pc as any).restartIce?.();
             }
         };
 
@@ -116,103 +134,74 @@ class WebRTCService {
         return pc;
     }
 
-    private getPeerConnection(remoteSocketId: string): RTCPeerConnection | undefined {
-        const pc = this.peerConnections.get(remoteSocketId);
-        if (!pc) return undefined;
-        if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-            this.peerConnections.delete(remoteSocketId);
-            return undefined;
-        }
-        return pc;
-    }
-
-    // Appelé uniquement par le NOUVEL arrivant vers les participants existants
+    // Appelé quand on rejoint et qu'il y a déjà des participants
     async callParticipant(remoteSocketId: string) {
-        if (this.makingOffer.has(remoteSocketId)) return;
-        const existing = this.getPeerConnection(remoteSocketId);
-        // Si la connexion est déjà établie, ne pas re-caller
-        if (existing?.signalingState === 'stable' && existing.currentRemoteDescription) return;
-
-        this.makingOffer.add(remoteSocketId);
-        try {
-            const pc = this.createPeerConnection(remoteSocketId);
-            const offer = await pc.createOffer({});
-            await pc.setLocalDescription(offer);
-            socketService.getSocket().emit('webrtc:offer', {
-                to: remoteSocketId,
-                offer: { type: offer.type, sdp: offer.sdp },
-            });
-        } catch (error) {
-            console.warn(`callParticipant failed [${remoteSocketId}]:`, error);
-        } finally {
-            this.makingOffer.delete(remoteSocketId);
-        }
+        // Crée la connexion — onnegotiationneeded enverra l'offer automatiquement
+        this.getOrCreatePeerConnection(remoteSocketId);
     }
 
-    async handleOffer(fromSocketId: string, offer: StrictSessionDescriptionInit) {
+    // Perfect negotiation pattern pour handleOffer
+    async handleOffer(fromSocketId: string, offer: { type: 'offer'; sdp: string }) {
+        const pc = this.getOrCreatePeerConnection(fromSocketId);
+
+        const offerCollision =
+            this.makingOffer.has(fromSocketId) ||
+            (pc as any).signalingState !== 'stable';
+
+        // Le pair "impoli" ignore l'offer en collision, le pair "poli" la traite
+        this.ignoreOffer.add(fromSocketId);
+        if (offerCollision && !this.isPolite) {
+            this.ignoreOffer.delete(fromSocketId);
+            return;
+        }
+        this.ignoreOffer.delete(fromSocketId);
+
         try {
-            let pc = this.getPeerConnection(fromSocketId);
-
-            // Glare resolution : si les deux côtés ont envoyé un offer simultanément,
-            // le socket avec l'ID lexicographiquement supérieur cède (rollback + accepte l'offer entrant)
-            if (pc?.signalingState === 'have-local-offer') {
-                const weYield = this.mySocketId < fromSocketId;
-                if (!weYield) {
-                    // On ignore l'offer entrant, l'autre va accepter le nôtre
-                    return;
-                }
-                // On annule notre offer et on accepte le leur
-                await pc.setLocalDescription({ type: 'rollback' } as any);
-            }
-
-            if (!pc) {
-                pc = this.createPeerConnection(fromSocketId);
-            }
-
             await pc.setRemoteDescription(new RTCSessionDescription(offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             socketService.getSocket().emit('webrtc:answer', {
                 to: fromSocketId,
-                answer: { type: answer.type, sdp: answer.sdp },
+                answer: pc.localDescription as RTCSessionDescriptionInit,
             });
-        } catch (error) {
-            console.warn(`handleOffer failed [${fromSocketId}]:`, error);
+        } catch (err) {
+            console.warn(`handleOffer failed (${fromSocketId}):`, err);
         }
     }
 
-    async handleAnswer(fromSocketId: string, answer: StrictSessionDescriptionInit) {
+    async handleAnswer(fromSocketId: string, answer: { type: 'answer'; sdp: string }) {
+        const pc = this.peerConnections.get(fromSocketId);
+        if (!pc) return;
+        // Ignore si on n'attend pas de réponse
+        if ((pc as any).signalingState !== 'have-local-offer') return;
         try {
-            const pc = this.getPeerConnection(fromSocketId);
-            if (!pc) return;
-            if (pc.signalingState !== 'have-local-offer') return;
             await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        } catch (error) {
-            console.warn(`handleAnswer failed [${fromSocketId}]:`, error);
+        } catch (err) {
+            console.warn(`handleAnswer failed (${fromSocketId}):`, err);
         }
     }
 
     async handleIceCandidate(fromSocketId: string, candidate: RTCIceCandidateInit) {
+        const pc = this.peerConnections.get(fromSocketId);
+        if (!pc || !candidate?.candidate) return;
         try {
-            const pc = this.getPeerConnection(fromSocketId);
-            if (!pc || !candidate) return;
-            // Attendre que la remote description soit définie avant d'ajouter le candidat
-            if (!pc.remoteDescription) {
-                // Réessayer dans 500ms
-                setTimeout(() => this.handleIceCandidate(fromSocketId, candidate), 500);
-                return;
-            }
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (error) {
-            console.warn(`handleIceCandidate failed [${fromSocketId}]:`, error);
+        } catch (err) {
+            // Ignore les candidats en doublon (normal avec perfect negotiation)
+            if (!(err instanceof Error && err.message.includes('duplicate'))) {
+                console.warn(`handleIceCandidate failed (${fromSocketId}):`, err);
+            }
         }
     }
 
     removeParticipant(socketId: string) {
         const pc = this.peerConnections.get(socketId);
-        pc?.close();
-        this.peerConnections.delete(socketId);
+        if (pc) {
+            try { pc.close(); } catch {}
+            this.peerConnections.delete(socketId);
+        }
         this.makingOffer.delete(socketId);
+        this.ignoreOffer.delete(socketId);
         this.onRemoteStreamRemovedHandlers.forEach((h) => h(socketId));
     }
 
@@ -233,11 +222,11 @@ class WebRTCService {
     }
 
     cleanup() {
-        this.peerConnections.forEach((pc) => pc.close());
+        this.peerConnections.forEach((pc) => { try { pc.close(); } catch {} });
         this.peerConnections.clear();
         this.makingOffer.clear();
-        this.mySocketId = '';
-        this.localStream?.getTracks().forEach((track) => track.stop());
+        this.ignoreOffer.clear();
+        this.localStream?.getTracks().forEach((t) => t.stop());
         this.localStream = null;
     }
 }
