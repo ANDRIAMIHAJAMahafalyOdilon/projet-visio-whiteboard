@@ -14,10 +14,8 @@ export function useChat(roomId: string, username: string) {
     useEffect(() => {
         const socket = socketService.getSocket();
 
-        // Handler nommé obligatoire pour que socket.off retire uniquement CE listener
         const onChatMessage = (message: ChatMessage) => {
             setMessages((prev) => {
-                // Éviter les doublons si le message est déjà présent
                 if (prev.some((m) => m.id === message.id)) return prev;
                 return [...prev, message];
             });
@@ -25,6 +23,8 @@ export function useChat(roomId: string, username: string) {
 
         socket.on('chat:message', onChatMessage);
 
+        // Gérer le cas où le socket se reconnecte (re-attacher les listeners si nécessaire,
+        // bien que socket.io le fasse si l'objet est le même)
         return () => {
             socket.off('chat:message', onChatMessage);
         };
@@ -34,10 +34,10 @@ export function useChat(roomId: string, username: string) {
         if (!text.trim()) return;
         socketService.getSocket().emit('chat:send', {
             roomId,
-            sender: username,
             text: text.trim(),
         });
-    }, [roomId, username]);
+    }, [roomId]);
+
 
     return { messages, sendMessage };
 }

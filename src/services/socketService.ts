@@ -41,17 +41,24 @@ class SocketService {
     private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
     connect() {
-        if (this.socket?.connected) return this.socket;
+        if (this.socket) return this.socket;
         this.socket = io(SIGNALING_SERVER_URL, {
             transports: ['websocket'],
-            reconnectionAttempts: 5,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
         });
         return this.socket;
     }
 
     getSocket() {
-        if (!this.socket) return this.connect();
-        return this.socket;
+        return this.connect();
+    }
+
+    onReconnect(callback: () => void) {
+        const socket = this.getSocket();
+        socket.on('connect', callback);
+        return () => socket.off('connect', callback);
     }
 
     waitForConnect(): Promise<void> {

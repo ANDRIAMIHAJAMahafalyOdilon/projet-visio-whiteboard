@@ -125,8 +125,16 @@ class WebRTCService {
         };
 
         (pc as any).oniceconnectionstatechange = () => {
+            console.log(`ICE state with ${remoteSocketId}:`, (pc as any).iceConnectionState);
             if ((pc as any).iceConnectionState === 'failed') {
                 (pc as any).restartIce?.();
+            }
+        };
+
+        (pc as any).onconnectionstatechange = () => {
+            console.log(`Connection state with ${remoteSocketId}:`, (pc as any).connectionState);
+            if ((pc as any).connectionState === 'failed') {
+                this.removeParticipant(remoteSocketId);
             }
         };
 

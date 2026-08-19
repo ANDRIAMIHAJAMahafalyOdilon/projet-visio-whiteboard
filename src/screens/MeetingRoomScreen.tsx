@@ -34,7 +34,7 @@ export default function MeetingRoomScreen() {
         currentColor, currentWidth, isEraser,
         setCurrentColor, setCurrentWidth, setIsEraser,
         startStroke, addPoint, endStroke, clearBoard,
-    } = useDrawing(username);
+    } = useDrawing(roomId, username);
 
     const { messages, sendMessage } = useChat(roomId, username);
     const { raisedHands, isHandRaised, toggleHand } = useRaisedHand(roomId);

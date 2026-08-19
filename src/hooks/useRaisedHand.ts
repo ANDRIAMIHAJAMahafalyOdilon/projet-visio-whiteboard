@@ -13,18 +13,24 @@ export function useRaisedHand(roomId: string) {
     useEffect(() => {
         const socket = socketService.getSocket();
 
-        socket.on('hand:update', ({ socketId, username, raised }) => {
+        const onHandUpdate = ({ socketId, username, raised }: { socketId: string, username: string, raised: boolean }) => {
             setRaisedHands((prev) => {
                 const others = prev.filter((e) => e.socketId !== socketId);
                 return raised ? [...others, { socketId, username }] : others;
             });
-        });
+        };
 
-        socket.on('room:user-left', (socketId: string) => {
+        const onUserLeft = (socketId: string) => {
             setRaisedHands((prev) => prev.filter((e) => e.socketId !== socketId));
-        });
+        };
 
-        return () => { socket.off('hand:update'); };
+        socket.on('hand:update', onHandUpdate);
+        socket.on('room:user-left', onUserLeft);
+
+        return () => {
+            socket.off('hand:update', onHandUpdate);
+            socket.off('room:user-left', onUserLeft);
+        };
     }, []);
 
     const toggleHand = useCallback(() => {
