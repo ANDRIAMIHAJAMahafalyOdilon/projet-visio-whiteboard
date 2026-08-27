@@ -1,4 +1,4 @@
-name: Android Gradle APK
+name: Android Gradle Release APK
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-debug-apk:
+  build-release-apk:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,13 +33,13 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --non-interactive
 
-      - name: Build debug APK with Gradle
+      - name: Build release APK with Gradle
         working-directory: android
-        run: ./gradlew --no-daemon :app:assembleDebug
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: visio-whiteboard-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: visio-whiteboard-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
