@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
-    KeyboardAvoidingView, Platform, Clipboard,
+    KeyboardAvoidingView, Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,10 +22,12 @@ export default function LobbyScreen() {
     const [roomId, setRoomId] = useState(generateRoomId());
 
     const handleEnter = () => {
-        if (!username.trim() || !roomId.trim()) return;
+        const cleanUser = username.trim().slice(0, 30);
+        const cleanRoom = roomId.trim().toUpperCase().slice(0, 10);
+        if (!cleanUser || !cleanRoom) return;
         navigation.navigate('MeetingRoom', {
-            username: username.trim(),
-            roomId: roomId.trim().toUpperCase(),
+            username: cleanUser,
+            roomId: cleanRoom,
             isHost: role === 'host',
         });
     };
@@ -72,7 +75,7 @@ export default function LobbyScreen() {
                             <View style={styles.hostIdActions}>
                                 <TouchableOpacity
                                     style={styles.copyButton}
-                                    onPress={() => Clipboard.setString(roomId)}
+                                    onPress={async () => await Clipboard.setStringAsync(roomId)}
                                 >
                                     <Ionicons name="copy-outline" size={18} color="#fff" />
                                     <Text style={styles.copyText}>Copier</Text>
@@ -96,7 +99,7 @@ export default function LobbyScreen() {
                         <TouchableOpacity
                             style={styles.pasteButton}
                             onPress={async () => {
-                                const text = await Clipboard.getString();
+                                const text = await Clipboard.getStringAsync();
                                 if (text) setRoomId(text.trim().toUpperCase());
                             }}
                         >

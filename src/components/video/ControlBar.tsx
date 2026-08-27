@@ -8,14 +8,19 @@ interface ControlBarProps {
   isMicOn: boolean;
   isCamOn: boolean;
   isHandRaised: boolean;
+  isFrontCam: boolean;
+  isScreenSharing: boolean;
   onToggleMic: () => void;
   onToggleCam: () => void;
   onToggleHand: () => void;
+  onFlipCamera: () => void;
+  onToggleScreenShare: () => void;
   onLeave: () => void;
 }
 
 export default function ControlBar({
-  isMicOn, isCamOn, isHandRaised, onToggleMic, onToggleCam, onToggleHand, onLeave,
+  isMicOn, isCamOn, isHandRaised, isFrontCam, isScreenSharing,
+  onToggleMic, onToggleCam, onToggleHand, onFlipCamera, onToggleScreenShare, onLeave,
 }: ControlBarProps) {
   const insets = useSafeAreaInsets();
 
@@ -27,6 +32,21 @@ export default function ControlBar({
 
       <TouchableOpacity style={[styles.button, !isCamOn && styles.buttonOff]} onPress={onToggleCam}>
         <Ionicons name={isCamOn ? 'videocam' : 'videocam-off'} size={22} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Retournement caméra — visible seulement si la caméra est active */}
+      {isCamOn && (
+        <TouchableOpacity style={styles.button} onPress={onFlipCamera}>
+          <Ionicons name="camera-reverse" size={22} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* Partage d'écran */}
+      <TouchableOpacity
+        style={[styles.button, isScreenSharing && styles.screenShareActive]}
+        onPress={onToggleScreenShare}
+      >
+        <Ionicons name={isScreenSharing ? 'stop-circle' : 'desktop'} size={22} color="#fff" />
       </TouchableOpacity>
 
       <TouchableOpacity style={[styles.button, isHandRaised && styles.handActive]} onPress={onToggleHand}>
@@ -52,5 +72,6 @@ const styles = StyleSheet.create({
   button: { width: 52, height: 52, borderRadius: radius.full, backgroundColor: colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
   buttonOff: { backgroundColor: colors.danger },
   handActive: { backgroundColor: '#F59E0B' },
+  screenShareActive: { backgroundColor: colors.primary },
   leaveButton: { backgroundColor: colors.danger },
 });

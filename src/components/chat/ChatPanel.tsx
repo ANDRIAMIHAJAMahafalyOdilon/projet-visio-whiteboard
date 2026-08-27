@@ -39,7 +39,7 @@ export default function ChatPanel({ messages, username, onSend }: ChatPanelProps
         contentContainerStyle={styles.listContent}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => {
-          const isMine = item.sender === username;
+          const isMine = item.isOwn;
           return (
             <View style={[styles.messageRow, isMine ? styles.rowRight : styles.rowLeft]}>
               <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>

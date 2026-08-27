@@ -58,5 +58,6 @@ export function simplifyPoints(points: Point[], minDistance: number = 3): Point[
 }
 
 export function generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    return Date.now().toString(36) + rand;
 }

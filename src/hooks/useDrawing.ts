@@ -66,14 +66,20 @@ export function useDrawing(roomId: string, username: string): UseDrawingResult {
             setStrokes([]);
         };
 
+        const onState = (initialStrokes: Stroke[]) => {
+            setStrokes(initialStrokes);
+        };
+
         socket.on('whiteboard:stroke-start', onStrokeStart);
         socket.on('whiteboard:stroke-update', onStrokeUpdate);
         socket.on('whiteboard:clear', onClear);
+        socket.on('whiteboard:state', onState);
 
         return () => {
             socket.off('whiteboard:stroke-start', onStrokeStart);
             socket.off('whiteboard:stroke-update', onStrokeUpdate);
             socket.off('whiteboard:clear', onClear);
+            socket.off('whiteboard:state', onState);
         };
     }, []);
 
@@ -93,9 +99,9 @@ export function useDrawing(roomId: string, username: string): UseDrawingResult {
             };
 
             setStrokes((prev) => [...prev, stroke]);
-            socketService.getSocket().emit('whiteboard:stroke-start', { ...stroke, roomId });
+            socketService.getSocket().emit('whiteboard:stroke-start', stroke);
         },
-        [username, roomId]
+        [username]
     );
 
     const addPoint = useCallback((point: Point) => {
@@ -110,10 +116,10 @@ export function useDrawing(roomId: string, username: string): UseDrawingResult {
 
         if (pointsBuffer.current.length >= 4) {
             const toSend = simplifyPoints(pointsBuffer.current);
-            socketService.getSocket().emit('whiteboard:stroke-update', { id, points: toSend, roomId });
+            socketService.getSocket().emit('whiteboard:stroke-update', { id, points: toSend });
             pointsBuffer.current = [];
         }
-    }, [roomId]);
+    }, []);
 
     const endStroke = useCallback(() => {
         if (!activeStrokeId.current) return;
@@ -123,19 +129,18 @@ export function useDrawing(roomId: string, username: string): UseDrawingResult {
             socketService.getSocket().emit('whiteboard:stroke-update', {
                 id,
                 points: pointsBuffer.current,
-                roomId
             });
         }
-        socketService.getSocket().emit('whiteboard:stroke-end', { id, roomId });
+        socketService.getSocket().emit('whiteboard:stroke-end', { id });
 
         activeStrokeId.current = null;
         pointsBuffer.current = [];
-    }, [roomId]);
+    }, []);
 
     const clearBoard = useCallback(() => {
         setStrokes([]);
-        socketService.getSocket().emit('whiteboard:clear', { roomId });
-    }, [roomId]);
+        socketService.getSocket().emit('whiteboard:clear');
+    }, []);
 
     return {
         strokes,

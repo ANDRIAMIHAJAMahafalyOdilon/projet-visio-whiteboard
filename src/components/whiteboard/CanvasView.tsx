@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { View, StyleSheet, PanResponder, GestureResponderEvent } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Stroke, pointsToSvgPath } from '@/utils/drawUtils';
@@ -12,22 +12,37 @@ interface CanvasViewProps {
 }
 
 export default function CanvasView({ strokes, onStart, onMove, onEnd }: CanvasViewProps) {
-    const panResponder = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onPanResponderGrant: (evt: GestureResponderEvent) => {
-                const { locationX, locationY } = evt.nativeEvent;
-                onStart({ x: locationX, y: locationY });
-            },
-            onPanResponderMove: (evt: GestureResponderEvent) => {
-                const { locationX, locationY } = evt.nativeEvent;
-                onMove({ x: locationX, y: locationY });
-            },
-            onPanResponderRelease: () => onEnd(),
-            onPanResponderTerminate: () => onEnd(),
-        })
-    ).current;
+    const activeTouches = useRef(0);
+
+    const panResponder = useMemo(
+        () =>
+            PanResponder.create({
+                onStartShouldSetPanResponder: () => true,
+                onMoveShouldSetPanResponder: () => true,
+                onPanResponderGrant: (evt: GestureResponderEvent) => {
+                    activeTouches.current++;
+                    if (activeTouches.current === 1) {
+                        const { locationX, locationY } = evt.nativeEvent;
+                        onStart({ x: locationX, y: locationY });
+                    }
+                },
+                onPanResponderMove: (evt: GestureResponderEvent) => {
+                    if (activeTouches.current === 1) {
+                        const { locationX, locationY } = evt.nativeEvent;
+                        onMove({ x: locationX, y: locationY });
+                    }
+                },
+                onPanResponderRelease: () => {
+                    activeTouches.current = Math.max(0, activeTouches.current - 1);
+                    if (activeTouches.current === 0) onEnd();
+                },
+                onPanResponderTerminate: () => {
+                    activeTouches.current = Math.max(0, activeTouches.current - 1);
+                    if (activeTouches.current === 0) onEnd();
+                },
+            }),
+        [onStart, onMove, onEnd]
+    );
 
     return (
         <View style={styles.container} {...panResponder.panHandlers}>

@@ -7,14 +7,15 @@ import { colors, radius } from '@/theme';
 interface LocalVideoProps {
     stream: MediaStream | null;
     isCamOn: boolean;
+    isFrontCam: boolean;
     username: string;
 }
 
-export default function LocalVideo({ stream, isCamOn, username }: LocalVideoProps) {
+export default function LocalVideo({ stream, isCamOn, isFrontCam, username }: LocalVideoProps) {
     return (
         <View style={styles.container}>
             {stream && isCamOn ? (
-                <RTCView streamURL={stream.toURL()} style={styles.video} objectFit="cover" mirror />
+                <RTCView streamURL={stream.toURL()} style={styles.video} objectFit="cover" mirror={isFrontCam} />
             ) : (
                 <View style={styles.placeholder}>
                     <Ionicons name="person" size={28} color={colors.textMuted} />

@@ -20,7 +20,8 @@ interface ServerToClientEvents {
     'whiteboard:stroke-update': (payload: { id: string; points: Stroke['points'] }) => void;
     'whiteboard:stroke-end': (payload: { id: string }) => void;
     'whiteboard:clear': () => void;
-    'chat:message': (payload: { id: string; sender: string; text: string; timestamp: string }) => void;
+    'whiteboard:state': (strokes: Stroke[]) => void;
+    'chat:message': (payload: { id: string; senderId: string; sender: string; text: string; timestamp: string }) => void;
     'hand:update': (payload: { socketId: string; username: string; raised: boolean }) => void;
 }
 
@@ -33,8 +34,8 @@ interface ClientToServerEvents {
     'whiteboard:stroke-update': (payload: { id: string; points: Stroke['points'] }) => void;
     'whiteboard:stroke-end': (payload: { id: string }) => void;
     'whiteboard:clear': () => void;
-    'chat:send': (payload: { roomId: string; sender: string; text: string }) => void;
-    'hand:toggle': (payload: { roomId: string; raised: boolean }) => void;
+    'chat:send': (payload: { text: string }) => void;
+    'hand:toggle': (payload: { raised: boolean }) => void;
 }
 
 class SocketService {
