@@ -6,8 +6,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LobbyScreen from '@/screens/LobbyScreen';
 import MeetingRoomScreen from '@/screens/MeetingRoomScreen';
 import { colors } from '@/theme';
+import { RootStackParamList } from '@/navigation/types';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
     return (

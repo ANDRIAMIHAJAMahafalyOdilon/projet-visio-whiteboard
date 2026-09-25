@@ -11,6 +11,22 @@ interface CanvasViewProps {
     onEnd: () => void;
 }
 
+// Un stroke inchangé garde la même référence d'objet → React.memo évite
+// de recalculer son path SVG à chaque nouveau point d'un autre tracé.
+const StrokePath = React.memo(function StrokePath({ stroke }: { stroke: Stroke }) {
+    const d = useMemo(() => pointsToSvgPath(stroke.points), [stroke.points]);
+    return (
+        <Path
+            d={d}
+            stroke={stroke.color}
+            strokeWidth={stroke.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+        />
+    );
+});
+
 export default function CanvasView({ strokes, onStart, onMove, onEnd }: CanvasViewProps) {
     const activeTouches = useRef(0);
 
@@ -45,18 +61,10 @@ export default function CanvasView({ strokes, onStart, onMove, onEnd }: CanvasVi
     );
 
     return (
-        <View style={styles.container} {...panResponder.panHandlers}>
-            <Svg style={StyleSheet.absoluteFill}>
+        <View style={styles.container} collapsable={false} {...panResponder.panHandlers}>
+            <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
                 {strokes.map((stroke) => (
-                    <Path
-                        key={stroke.id}
-                        d={pointsToSvgPath(stroke.points)}
-                        stroke={stroke.color}
-                        strokeWidth={stroke.width}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        fill="none"
-                    />
+                    <StrokePath key={stroke.id} stroke={stroke} />
                 ))}
             </Svg>
         </View>

@@ -6,17 +6,29 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/theme';
+import { RootStackParamList } from '@/navigation/types';
 
 type Role = 'host' | 'join';
 
-function generateRoomId() {
-    return Math.random().toString(36).slice(2, 8).toUpperCase();
+function generateRoomId(): string {
+    const vals = new Uint8Array(6);
+    const cryptoObj = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+    if (cryptoObj?.getRandomValues) {
+        cryptoObj.getRandomValues(vals);
+    } else {
+        for (let i = 0; i < vals.length; i++) vals[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(vals, (v) => v % 36)
+        .map((n) => n.toString(36))
+        .join('')
+        .toUpperCase();
 }
 
 export default function LobbyScreen() {
-    const navigation = useNavigation<any>();
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const [role, setRole] = useState<Role>('host');
     const [username, setUsername] = useState('');
     const [roomId, setRoomId] = useState(generateRoomId());

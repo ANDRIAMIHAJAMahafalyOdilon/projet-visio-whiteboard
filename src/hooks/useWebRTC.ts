@@ -15,9 +15,10 @@ interface UseWebRTCResult {
     toggleMic: () => void;
     toggleCam: () => void;
     flipCamera: () => void;
-    toggleScreenShare: () => Promise<void>;
+toggleScreenShare: () => Promise<void>;
     leaveRoom: () => void;
     joinError: string | null;
+    isReconnecting: boolean;
 }
 
 export function useWebRTC(roomId: string, username: string, isHost: boolean): UseWebRTCResult {
@@ -26,11 +27,13 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
     const [participants, setParticipants] = useState<RoomParticipant[]>([]);
     const [isCurrentHost, setIsCurrentHost] = useState(isHost);
     const isHostRef = useRef(isHost);
+    const joinedRef = useRef(false);
     const [isMicOn, setIsMicOn] = useState(true);
     const [isCamOn, setIsCamOn] = useState(true);
     const [isFrontCam, setIsFrontCam] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
     const [joinError, setJoinError] = useState<string | null>(null);
+    const [isReconnecting, setIsReconnecting] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
@@ -77,10 +80,24 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
             setJoinError(message);
         };
 
-        const onYouAreHost = () => {
+const onYouAreHost = () => {
             if (!isMounted) return;
             isHostRef.current = true;
             setIsCurrentHost(true);
+        };
+
+        const onHost = ({ socketId }: { socketId: string | null }) => {
+            if (!isMounted) return;
+            const isMe = socketId !== null && socketId === socketService.getSocket().id;
+            isHostRef.current = isMe;
+            setIsCurrentHost(isMe);
+        };
+
+        const onHostChanged = ({ socketId }: { socketId: string }) => {
+            if (!isMounted) return;
+            const isMe = socketId === socketService.getSocket().id;
+            isHostRef.current = isMe;
+            setIsCurrentHost(isMe);
         };
 
         const onOffer = ({ from, offer }: { from: string; offer: RTCSessionDescriptionInit }) => {
@@ -98,13 +115,15 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
             webRTCService.handleIceCandidate(from, candidate).catch(console.warn);
         };
 
-        const setupSocketListeners = () => {
+const setupSocketListeners = () => {
             const socket = socketService.getSocket();
             socket.on('room:participants', onParticipants);
             socket.on('room:user-joined', onUserJoined);
             socket.on('room:user-left', onUserLeft);
             socket.on('room:error', onRoomError);
             socket.on('room:you-are-host', onYouAreHost);
+            socket.on('room:host', onHost);
+            socket.on('room:host-changed', onHostChanged);
             socket.on('webrtc:offer', onOffer);
             socket.on('webrtc:answer', onAnswer);
             socket.on('webrtc:ice-candidate', onIceCandidate);
@@ -113,12 +132,20 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
             // VRAIE reconnexion, pas à la première connexion initiale
             const handleReconnect = () => {
                 console.log('[SOCKET] Reconnexion — re-join room...');
+                if (isMounted) setIsReconnecting(false);
                 webRTCService.cleanupPeerConnections();
                 setRemoteStreams([]);
                 setParticipants([]);
                 socketService.joinRoom(roomId, username, isHostRef.current);
             };
+
+            // 'disconnect' ne se déclenche qu'après avoir été connecté une fois
+            const handleDisconnect = () => {
+                if (isMounted && joinedRef.current) setIsReconnecting(true);
+            };
+
             socket.io.on('reconnect', handleReconnect);
+            socket.on('disconnect', handleDisconnect);
 
             return () => {
                 socket.off('room:participants', onParticipants);
@@ -126,10 +153,13 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 socket.off('room:user-left', onUserLeft);
                 socket.off('room:error', onRoomError);
                 socket.off('room:you-are-host', onYouAreHost);
+                socket.off('room:host', onHost);
+                socket.off('room:host-changed', onHostChanged);
                 socket.off('webrtc:offer', onOffer);
                 socket.off('webrtc:answer', onAnswer);
                 socket.off('webrtc:ice-candidate', onIceCandidate);
                 socket.io.off('reconnect', handleReconnect);
+                socket.off('disconnect', handleDisconnect);
             };
         };
 
@@ -155,6 +185,7 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
                 }));
 
                 socketService.joinRoom(roomId, username, isHost);
+                joinedRef.current = true;
             } catch (error) {
                 if (!isMounted) return;
                 setJoinError(error instanceof Error ? error.message : 'Erreur de connexion.');
@@ -204,6 +235,7 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
     }, [isScreenSharing]);
 
     const leaveRoom = useCallback(() => {
+        joinedRef.current = false;
         webRTCService.cleanup();
         socketService.disconnect();
     }, []);
@@ -223,5 +255,6 @@ export function useWebRTC(roomId: string, username: string, isHost: boolean): Us
         toggleScreenShare,
         leaveRoom,
         joinError,
+        isReconnecting,
     };
 }

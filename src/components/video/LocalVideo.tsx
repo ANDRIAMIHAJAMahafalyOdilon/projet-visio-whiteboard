@@ -15,7 +15,7 @@ export default function LocalVideo({ stream, isCamOn, isFrontCam, username }: Lo
     return (
         <View style={styles.container}>
             {stream && isCamOn ? (
-                <RTCView streamURL={stream.toURL()} style={styles.video} objectFit="cover" mirror={isFrontCam} />
+                <RTCView streamURL={stream.toURL()} style={styles.video} objectFit="cover" mirror={isFrontCam} zOrder={1} />
             ) : (
                 <View style={styles.placeholder}>
                     <Ionicons name="person" size={28} color={colors.textMuted} />

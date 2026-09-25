@@ -7,12 +7,22 @@ export interface RoomParticipant {
     username: string;
 }
 
+export interface ChatMessagePayload {
+    id: string;
+    senderId: string;
+    sender: string;
+    text: string;
+    timestamp: string;
+}
+
 interface ServerToClientEvents {
     'room:participants': (participants: RoomParticipant[]) => void;
     'room:user-joined': (participant: RoomParticipant) => void;
     'room:user-left': (socketId: string) => void;
     'room:error': (payload: { message: string }) => void;
     'room:you-are-host': () => void;
+    'room:host': (payload: { socketId: string | null }) => void;
+    'room:host-changed': (payload: { socketId: string }) => void;
     'webrtc:offer': (payload: { from: string; offer: RTCSessionDescriptionInit }) => void;
     'webrtc:answer': (payload: { from: string; answer: RTCSessionDescriptionInit }) => void;
     'webrtc:ice-candidate': (payload: { from: string; candidate: RTCIceCandidateInit }) => void;
@@ -21,7 +31,8 @@ interface ServerToClientEvents {
     'whiteboard:stroke-end': (payload: { id: string }) => void;
     'whiteboard:clear': () => void;
     'whiteboard:state': (strokes: Stroke[]) => void;
-    'chat:message': (payload: { id: string; senderId: string; sender: string; text: string; timestamp: string }) => void;
+    'chat:message': (payload: ChatMessagePayload) => void;
+    'chat:history': (payload: ChatMessagePayload[]) => void;
     'hand:update': (payload: { socketId: string; username: string; raised: boolean }) => void;
 }
 

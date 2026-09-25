@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import type { ComponentProps } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/theme';
 
@@ -11,7 +12,9 @@ interface SharedControlsProps {
     unreadCount?: number;
 }
 
-const TABS: { key: ViewMode; label: string; icon: any }[] = [
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+const TABS: { key: ViewMode; label: string; icon: IoniconName }[] = [
     { key: 'video', label: 'Visio', icon: 'videocam' },
     { key: 'whiteboard', label: 'Tableau', icon: 'brush' },
     { key: 'chat', label: 'Chat', icon: 'chatbubble' },

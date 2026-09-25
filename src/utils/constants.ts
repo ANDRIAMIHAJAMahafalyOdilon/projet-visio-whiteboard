@@ -1,6 +1,9 @@
-// Adresse du serveur de signalement (Node.js + Socket.io)
-// TODO: remplace par l'IP/domaine de ton propre serveur
-export const SIGNALING_SERVER_URL = 'https://serveur-signalement-visio.onrender.com';
+// Adresse du serveur de signalement (Node.js + Socket.io).
+// Surchargeable au build via EXPO_PUBLIC_SIGNALING_SERVER_URL (voir .env)
+const buildEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+export const SIGNALING_SERVER_URL =
+    buildEnv.EXPO_PUBLIC_SIGNALING_SERVER_URL?.replace(/\/$/, '') ||
+    'https://serveur-signalement-visio.onrender.com';
 
 // Serveurs STUN/TURN pour établir les connexions WebRTC à travers les NAT/pare-feu.
 // - STUN  : aide à découvrir l'IP publique
@@ -52,5 +55,3 @@ export const STROKE_WIDTHS = [2, 4, 6, 10];
 
 /** Couleur utilisée par la gomme (identique au fond du canvas) */
 export const ERASER_COLOR = '#FFFFFF';
-
-export const MAX_PARTICIPANTS_GRID = 6;

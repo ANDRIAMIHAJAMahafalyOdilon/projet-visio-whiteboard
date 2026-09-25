@@ -57,7 +57,19 @@ export function simplifyPoints(points: Point[], minDistance: number = 3): Point[
     return result;
 }
 
+function randomHex(length: number): string {
+    const cryptoObj = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+    if (cryptoObj?.getRandomValues) {
+        const bytes = new Uint8Array(Math.ceil(length / 2));
+        cryptoObj.getRandomValues(bytes);
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, length);
+    }
+    let out = '';
+    for (let i = 0; i < length; i++) out += Math.floor(Math.random() * 16).toString(16);
+    return out;
+}
+
 export function generateId(): string {
-    const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const rand = randomHex(12);
     return Date.now().toString(36) + rand;
 }

@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { socketService } from '@/services/socketService';
+import { socketService, ChatMessagePayload } from '@/services/socketService';
 
-export interface ChatMessage {
-    id: string;
-    senderId: string;
-    sender: string;
-    text: string;
-    timestamp: string;
+export interface ChatMessage extends ChatMessagePayload {
     /** true si ce message a été envoyé par l'utilisateur local */
     isOwn: boolean;
 }
@@ -17,7 +12,7 @@ export function useChat(roomId: string, username: string) {
     useEffect(() => {
         const socket = socketService.getSocket();
 
-        const onChatMessage = (message: Omit<ChatMessage, 'isOwn'>) => {
+        const onChatMessage = (message: ChatMessagePayload) => {
             setMessages((prev) => {
                 if (prev.some((m) => m.id === message.id)) return prev;
                 const isOwn = message.senderId === socket.id;
@@ -25,12 +20,19 @@ export function useChat(roomId: string, username: string) {
             });
         };
 
+        // Historique envoyé par le serveur à l'arrivée dans la salle
+        const onChatHistory = (history: ChatMessagePayload[]) => {
+            setMessages(history.map((m) => ({ ...m, isOwn: m.senderId === socket.id })));
+        };
+
         socket.on('chat:message', onChatMessage);
+        socket.on('chat:history', onChatHistory);
 
         return () => {
             socket.off('chat:message', onChatMessage);
+            socket.off('chat:history', onChatHistory);
         };
-    }, [username]);
+    }, []);
 
     const sendMessage = useCallback((text: string) => {
         if (!text.trim()) return;

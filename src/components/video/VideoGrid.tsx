@@ -30,7 +30,7 @@ export default function VideoGrid({ remoteStreams, participants }: VideoGridProp
             contentContainerStyle={styles.grid}
             renderItem={({ item }) => (
                 <View style={styles.tile}>
-                    <RTCView streamURL={item.stream.toURL()} style={styles.video} objectFit="cover" />
+                    <RTCView streamURL={item.stream.toURL()} style={styles.video} objectFit="cover" zOrder={0} />
                     <View style={styles.label}>
                         <Text style={styles.labelText}>{getUsername(item.socketId)}</Text>
                     </View>

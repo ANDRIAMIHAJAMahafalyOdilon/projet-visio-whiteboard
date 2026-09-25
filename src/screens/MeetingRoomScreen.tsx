@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, ActivityIndicator, Text } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/theme';
+import { colors, radius, spacing } from '@/theme';
+import { RootStackParamList } from '@/navigation/types';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useDrawing } from '@/hooks/useDrawing';
 import { useChat } from '@/hooks/useChat';
@@ -17,8 +20,8 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import SharedControls, { ViewMode } from '@/components/SharedControls';
 
 export default function MeetingRoomScreen() {
-    const route = useRoute<any>();
-    const navigation = useNavigation<any>();
+    const route = useRoute<RouteProp<RootStackParamList, 'MeetingRoom'>>();
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const insets = useSafeAreaInsets();
     const { roomId, username, isHost: initialIsHost } = route.params;
     const [mode, setMode] = useState<ViewMode>('video');
@@ -27,7 +30,7 @@ export default function MeetingRoomScreen() {
     const {
         localStream, remoteStreams, participants,
         isMicOn, isCamOn, isFrontCam, isScreenSharing,
-        toggleMic, toggleCam, flipCamera, toggleScreenShare, leaveRoom, joinError, isHost,
+        toggleMic, toggleCam, flipCamera, toggleScreenShare, leaveRoom, joinError, isHost, isReconnecting,
     } = useWebRTC(roomId, username, initialIsHost);
 
     const {
@@ -83,26 +86,33 @@ export default function MeetingRoomScreen() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <SharedControls mode={mode} onChangeMode={setMode} unreadCount={unreadChat} />
 
+            {isReconnecting && (
+                <View style={styles.reconnectBanner}>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.reconnectText}>Connexion perdue — reconnexion en cours…</Text>
+                </View>
+            )}
+
             <View style={styles.content}>
+                {/* Chargement pendant l'acquisition caméra/micro + connexion */}
+                {!localStream && !joinError && (
+                    <View style={styles.loadingOverlay}>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                        <Text style={styles.loadingText}>Connexion en cours…</Text>
+                    </View>
+                )}
                 {/*
-                 * VideoGrid et LocalVideo sont TOUJOURS montés pour éviter de couper/recréer
-                 * les streams WebRTC. On les cache avec display:'none' hors du mode vidéo.
+                 * Ne jamais utiliser display:'none' sur les RTCView (SurfaceView Android) :
+                 * ça fait crasher l'APK. On réduit la couche vidéo à 1×1 hors mode visio.
+                 * Un seul LocalVideo : deux RTCView sur le même stream plantent aussi.
                  */}
-                <View style={mode === 'video' ? styles.videoContainer : styles.hidden}>
+                <View style={mode === 'video' ? styles.videoLayer : styles.videoLayerMinimized}>
                     <RaisedHandsBar raisedHands={raisedHands} />
                     <VideoGrid remoteStreams={remoteStreams} participants={participants} />
-                    <View style={styles.localVideoOverlay}>
-                        <LocalVideo
-                            stream={localStream}
-                            isCamOn={isCamOn}
-                            isFrontCam={isFrontCam}
-                            username={isHost ? `${username} (hôte)` : username}
-                        />
-                    </View>
                 </View>
 
                 {mode === 'whiteboard' && (
-                    <>
+                    <View style={styles.overlayLayer}>
                         <CanvasView
                             strokes={strokes}
                             onStart={startStroke}
@@ -119,24 +129,23 @@ export default function MeetingRoomScreen() {
                             onToggleEraser={() => setIsEraser(!isEraser)}
                             onClearAll={handleClearAll}
                         />
-                    </>
+                    </View>
                 )}
 
                 {mode === 'chat' && (
-                    <ChatPanel messages={messages} username={username} onSend={sendMessage} />
-                )}
-
-                {/* Mini vignette PiP : vidéo locale visible en coin lors du chat / tableau blanc */}
-                {mode !== 'video' && localStream && isCamOn && (
-                    <View style={styles.pipOverlay} pointerEvents="none">
-                        <LocalVideo
-                            stream={localStream}
-                            isCamOn={isCamOn}
-                            isFrontCam={isFrontCam}
-                            username={isHost ? `${username} (hôte)` : username}
-                        />
+                    <View style={styles.overlayLayer}>
+                        <ChatPanel messages={messages} username={username} onSend={sendMessage} />
                     </View>
                 )}
+
+                <View style={styles.localVideoOverlay} pointerEvents="none">
+                    <LocalVideo
+                        stream={localStream}
+                        isCamOn={isCamOn}
+                        isFrontCam={isFrontCam}
+                        username={isHost ? `${username} (hôte)` : username}
+                    />
+                </View>
             </View>
 
             <ControlBar
@@ -159,16 +168,51 @@ export default function MeetingRoomScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     content: { flex: 1 },
-    /** Conteneur plein écran pour le mode vidéo */
-    videoContainer: { flex: 1 },
-    /** Cache complètement le composant (display:none) sans le démonter */
-    hidden: { display: 'none' },
-    /** Vignette locale flottante en bas à droite (PiP) dans les autres modes */
-    pipOverlay: {
+    reconnectBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#2F3136',
+        paddingVertical: 8,
+        marginHorizontal: spacing.md,
+        borderRadius: radius.full,
+        marginBottom: 4,
+    },
+    reconnectText: { color: colors.text, fontSize: 12, fontWeight: '600' },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        zIndex: 5,
+    },
+    loadingText: { color: colors.textMuted, fontSize: 13 },
+    videoLayer: { flex: 1 },
+    videoLayerMinimized: {
+        position: 'absolute',
+        width: 1,
+        height: 1,
+        opacity: 0,
+        overflow: 'hidden',
+    },
+    overlayLayer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: colors.background,
+        zIndex: 1,
+    },
+    localVideoOverlay: {
         position: 'absolute',
         bottom: 16,
         right: 16,
-        zIndex: 10,
+        zIndex: 2,
     },
-    localVideoOverlay: { position: 'absolute', bottom: 16, right: 16 },
 });

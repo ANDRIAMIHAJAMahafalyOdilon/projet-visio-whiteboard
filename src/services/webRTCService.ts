@@ -27,9 +27,10 @@ class WebRTCService {
     _screenTrack: MediaStreamTrack | null = null;
     _screenStream: MediaStream | null = null;
 
-    private makingOffer: Set<string> = new Set();
+private makingOffer: Set<string> = new Set();
     private ignoreOffer: Set<string> = new Set();
     private pendingIceCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
+    private iceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
     async getLocalStream(): Promise<MediaStream> {
         if (this.localStream) return this.localStream;
@@ -61,9 +62,12 @@ class WebRTCService {
 
     flipCamera() {
         const videoTrack = this.localStream?.getVideoTracks()[0];
-        if (videoTrack) {
+        if (!videoTrack) return;
+        try {
             // _switchCamera() bascule facingMode user↔environment sans recréer le stream
             (videoTrack as unknown as { _switchCamera: () => void })._switchCamera();
+        } catch (err) {
+            console.warn('flipCamera failed:', err);
         }
     }
 
@@ -134,8 +138,6 @@ class WebRTCService {
             iceTransportPolicy: 'all',
         });
 
-        // Timer pour détecter un ICE bloqué en 'checking' trop longtemps
-        let iceCheckingTimer: ReturnType<typeof setTimeout> | null = null;
         // Compteur de tentatives ICE restart (max 3 avant d'abandonner)
         let iceRestartAttempts = 0;
 
@@ -167,12 +169,18 @@ class WebRTCService {
 
         pc.onnegotiationneeded = async () => {
             if (this.makingOffer.has(remoteSocketId)) return; // déjà en cours
+            // Perfect negotiation : le check doit précéder createOffer (async),
+            // sinon un offer entrant peut entrer en collision pendant l'attente.
+            if (pc.signalingState !== 'stable') return;
             try {
                 this.makingOffer.add(remoteSocketId);
                 const offer = await pc.createOffer({});
-                // Vérifie APRÈS createOffer (peut prendre du temps)
-                if (pc.signalingState !== 'stable') return;
                 await pc.setLocalDescription(offer);
+                // Un offer concurrent a pu arriver pendant l'await → on abandonne le nôtre
+                if (pc.signalingState !== 'stable') {
+                    await pc.setLocalDescription({ type: 'rollback', sdp: '' }).catch(() => {});
+                    return;
+                }
                 socketService.getSocket().emit('webrtc:offer', {
                     to: remoteSocketId,
                     offer: pc.localDescription as RTCSessionDescriptionInit,
@@ -220,19 +228,19 @@ class WebRTCService {
             console.log(`[ICE] state with ${remoteSocketId}:`, state);
 
             // Annule le timer de timeout si ICE progresse
-            if (state !== 'checking' && iceCheckingTimer) {
-                clearTimeout(iceCheckingTimer);
-                iceCheckingTimer = null;
+            if (state !== 'checking') {
+                this.clearIceTimer(remoteSocketId);
             }
 
             if (state === 'checking') {
                 // Timeout : si ICE reste en "checking" plus de 15s → restart
-                iceCheckingTimer = setTimeout(() => {
+                this.clearIceTimer(remoteSocketId);
+                this.iceTimers.set(remoteSocketId, setTimeout(() => {
                     if (pc.iceConnectionState === 'checking') {
                         console.warn(`[ICE] Timeout 'checking' avec ${remoteSocketId} → restart`);
                         triggerIceRestart();
                     }
-                }, 15_000);
+                }, 15_000));
             }
 
             if (state === 'failed') {
@@ -336,6 +344,14 @@ class WebRTCService {
         }
     }
 
+    private clearIceTimer(socketId: string) {
+        const timer = this.iceTimers.get(socketId);
+        if (timer) {
+            clearTimeout(timer);
+            this.iceTimers.delete(socketId);
+        }
+    }
+
     private async flushPendingIceCandidates(socketId: string, pc: RTCPeerConnection) {
         const pending = this.pendingIceCandidates.get(socketId) ?? [];
         this.pendingIceCandidates.delete(socketId);
@@ -354,9 +370,10 @@ class WebRTCService {
             try { pc.close(); } catch {}
             this.peerConnections.delete(socketId);
         }
-        this.makingOffer.delete(socketId);
+this.makingOffer.delete(socketId);
         this.ignoreOffer.delete(socketId);
         this.pendingIceCandidates.delete(socketId);
+        this.clearIceTimer(socketId);
         this.onRemoteStreamRemovedHandlers.forEach((h) => h(socketId));
     }
 
@@ -376,12 +393,14 @@ class WebRTCService {
         };
     }
 
-    cleanup() {
+cleanup() {
         this.peerConnections.forEach((pc) => { try { pc.close(); } catch {} });
         this.peerConnections.clear();
         this.makingOffer.clear();
         this.ignoreOffer.clear();
         this.pendingIceCandidates.clear();
+        this.iceTimers.forEach((t) => clearTimeout(t));
+        this.iceTimers.clear();
         this._screenTrack?.stop();
         this._screenTrack = null;
         this._screenStream = null;
